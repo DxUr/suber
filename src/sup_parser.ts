@@ -58,7 +58,7 @@ interface ODS {
     lastInSequenceFlag: "last" | "first" | "firstAndLast";
     width: number;
     height: number;
-    data?: ArrayBuffer;
+    data?: ArrayBuffer | SharedArrayBuffer;
 };
 
 interface Packet {
@@ -87,7 +87,7 @@ export default class SupParser {
         const magic = this.dataView?.getUint16(this.offset);
         this.offset += 2;
         if (magic !== 0x5047) {
-            throw new Error("invalid magic");
+            throw new Error(`invalid magic @ ${this.offset}`);
         }
         const pts = this.dataView?.getInt32(this.offset);
         this.offset += 4;
@@ -254,9 +254,9 @@ export default class SupParser {
         const lastInSequenceFlag = lastInSequenceFlagValue === 0x40 ? "last" :
             lastInSequenceFlagValue === 0x80 ? "first" :
                 "firstAndLast";
-        const objectDataLength = ((this.dataView.getUint8(this.offset++) << 16) |
+        let objectDataLength = ((this.dataView.getUint8(this.offset++) << 16) |
             (this.dataView.getUint8(this.offset++) << 8) |
-            this.dataView.getUint8(this.offset++)) - 4;
+            this.dataView.getUint8(this.offset++));
 
         let ods: ODS = {
             id,
@@ -267,10 +267,15 @@ export default class SupParser {
         }
 
         if (objectDataLength > 0) {
-            ods.width = this.dataView.getUint16(this.offset);
-            this.offset += 2;
-            ods.height = this.dataView.getUint16(this.offset);
-            this.offset += 2;
+            if (lastInSequenceFlagValue & 0x40) {
+                ods.width = this.dataView.getUint16(this.offset);
+                this.offset += 2;
+                ods.height = this.dataView.getUint16(this.offset);
+                this.offset += 2;
+                objectDataLength -= 4;
+            } else {
+                objectDataLength += 17;
+            }
             ods.data = this.dataView.buffer.slice(this.offset, this.offset + objectDataLength);
             this.offset += objectDataLength;
         }
